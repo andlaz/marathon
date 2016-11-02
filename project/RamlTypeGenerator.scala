@@ -205,7 +205,9 @@ object RamlTypeGenerator {
       )
 
       val obj = OBJECTDEF(name) := BLOCK(
-        enumObjects ++ Seq(playJsonFormat)
+        enumObjects ++ Seq(playJsonFormat) ++ default.map { defaultValue =>
+          VAL("DefaultValue") withType(name) := REF(underscoreToCamel(camelify(defaultValue)))
+        }
       )
       Seq(baseTrait.withDoc(comments), obj)
     }
@@ -251,26 +253,31 @@ object RamlTypeGenerator {
 
     override def toString: String = s"$name: ${`type`}"
 
-    lazy val param: treehugger.forest.ValDef = {
+    lazy val paramTypeValue: Option[(Type, Tree)] = {
       if ((required || default.isDefined) && !forceOptional) {
-        defaultValue.fold { PARAM(name, `type`).tree } { d => PARAM(name, `type`) := d }
+        defaultValue.map { d => `type` -> d }
       } else {
-        if (repeated && !forceOptional) {
-          val typeName = `type`.toString()
-          if (typeName.startsWith("Map")) {
-            PARAM(name, `type`) := REF("Map") DOT "empty"
-          } else {
-            if (typeName.startsWith("Set")) {
-              PARAM(name, `type`) := REF("Set") DOT "empty"
+        Option(
+          if (repeated && !forceOptional) {
+            val typeName = `type`.toString()
+            if (typeName.startsWith("Map")) {
+              `type` -> (REF("Map") DOT "empty")
             } else {
-              PARAM(name, `type`) := NIL
+              if (typeName.startsWith("Set")) {
+                `type` -> (REF("Set") DOT "empty")
+              } else {
+                `type` -> NIL
+              }
             }
+          } else {
+            TYPE_OPTION(`type`) -> NONE
           }
-        } else {
-          PARAM(name, TYPE_OPTION(`type`)) := NONE
-        }
+        )
       }
     }
+
+    lazy val param: treehugger.forest.ValDef =
+      paramTypeValue.fold { PARAM(name, `type`).tree } { case (pType, pValue) => PARAM(name, pType) := pValue }
 
     lazy val comment: String = if (comments.nonEmpty) {
       val lines = comments.flatMap(_.lines)
@@ -441,14 +448,19 @@ object RamlTypeGenerator {
         Seq(VAL("playJsonFormat") withFlags Flags.IMPLICIT := REF("play.api.libs.json.Json") DOT "format" APPLYTYPE (name))
       }
 
+      val defaultFields = fields.withFilter(_.paramTypeValue.nonEmpty).flatMap { f =>
+        val (dType, dValue) = f.paramTypeValue.get
+        Seq(VAL(s"Default${f.name.capitalize}") withType(dType) := dValue)
+      }
+
       val obj = if (childTypes.isEmpty) {
         (OBJECTDEF(name)) := BLOCK(
-          playFormat
+          playFormat ++ defaultFields
         )
       } else if (discriminator.isDefined) {
         val childDiscriminators: Map[String, ObjectT] = childTypes.map(ct => ct.discriminatorValue.getOrElse(ct.name) -> ct)(collection.breakOut)
         OBJECTDEF(name) := BLOCK(
-          OBJECTDEF("PlayJsonFormat") withParents PLAY_JSON_FORMAT(name) withFlags Flags.IMPLICIT := BLOCK(
+          Seq(OBJECTDEF("PlayJsonFormat") withParents PLAY_JSON_FORMAT(name) withFlags Flags.IMPLICIT := BLOCK(
             DEF("reads", PLAY_JSON_RESULT(name)) withParams PARAM("json", PlayJsValue) := {
               TUPLE(REF("json") DOT "\\" APPLY LIT(discriminator.get)) DOT "validate" APPLYTYPE (StringClass) MATCH (
                 childDiscriminators.map { case (k, v) =>
@@ -465,12 +477,12 @@ object RamlTypeGenerator {
                   CASE(REF(s"f:${v.name}")) ==> (REF(PlayJson) DOT "toJson" APPLY REF("f") APPLY(REF(v.name) DOT "playJsonWriter"))
                 }
             )
-          )
+          )) ++ defaultFields
         )
       } else {
         System.err.println(s"[WARNING] $name uses subtyping but has no discriminator. If it is not a union type when it is" +
           " used, it will not be able to be deserialized at this time")
-        OBJECTDEF(name).tree
+        OBJECTDEF(name) := BLOCK(defaultFields)
       }
 
       val commentBlock = comments ++ actualFields.map(_.comment)(collection.breakOut)
@@ -478,7 +490,7 @@ object RamlTypeGenerator {
     }
   }
 
-  case class StringT(name: String) extends GeneratedClass {
+  case class StringT(name: String, defaultValue: Option[String]) extends GeneratedClass {
     override def toTree(): Seq[treehugger.forest.Tree] = Seq.empty[Tree]
   }
 
@@ -507,16 +519,20 @@ object RamlTypeGenerator {
       val children = childTypes.flatMap {
         case s: StringT =>
           Seq[Tree](
-            CASECLASSDEF(s.name) withParents name withParams PARAM("value", StringClass).tree,
+            CASECLASSDEF(s.name) withParents name withParams s.defaultValue.fold(PARAM("value", StringClass).tree){ defaultValue =>
+              PARAM("value", StringClass) := LIT(defaultValue)
+            },
             OBJECTDEF(s.name) := BLOCK(
-              OBJECTDEF("playJsonFormat") withParents PLAY_JSON_FORMAT(s.name) withFlags Flags.IMPLICIT := BLOCK(
+              Seq(OBJECTDEF("playJsonFormat") withParents PLAY_JSON_FORMAT(s.name) withFlags Flags.IMPLICIT := BLOCK(
                 DEF("reads", PLAY_JSON_RESULT(s.name)) withParams PARAM("json", PlayJsValue) := BLOCK(
                   REF("json") DOT "validate" APPLYTYPE StringClass DOT "map" APPLY (REF(s.name) DOT "apply")
                 ),
                 DEF("writes", PlayJsValue) withParams PARAM("o", s.name) := BLOCK(
                   REF(PlayJsString) APPLY (REF("o") DOT "value")
                 )
-              )
+              )) ++ s.defaultValue.map{ defaultValue =>
+                VAL("DefaultValue") withType(s.name) := REF(s.name) APPLY()
+              }
             )
           )
         case t => t.toTree()
@@ -676,7 +692,7 @@ object RamlTypeGenerator {
                     val fields: Seq[FieldT] = o.properties().withFilter(_.`type`() != "nil").map(f => createField(name, f))(collection.breakOut)
                     ObjectT(name, fields, parent, comment(o), discriminator = Option(o.discriminator()), discriminatorValue = Option(o.discriminatorValue()))
                   case s: StringTypeDeclaration =>
-                    StringT(s.name)
+                    StringT(s.name, Option(s.defaultValue()))
                   case t =>
                     sys.error(s"Unable to generate union types of non-object/string subtypes: ${u.name()} ${t.name()} ${t.`type`()}")
                 }

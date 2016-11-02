@@ -23,39 +23,13 @@ class NetworkConversionTest extends UnitTest {
 
     "port mappings is converted correctly" in {
       val portMapping = PortMapping(23, Some(123), 0, "udp", Some("name"), Map("foo" -> "bla"))
-      val raml = portMapping.toRaml[DockerPortMapping]
+      val raml = portMapping.toRaml[ContainerPortMapping]
       raml.containerPort should be(portMapping.containerPort)
       raml.hostPort should be(portMapping.hostPort)
       raml.servicePort should be(portMapping.servicePort)
       raml.name should be(portMapping.name)
       raml.labels should be(portMapping.labels)
       raml.protocol should be(NetworkProtocol.Udp)
-    }
-
-    "DiscoveryInfo.Port is converted correctly" in {
-      val port = state.DiscoveryInfo.Port(123, "test", "tcp", Map("foo" -> "bla"))
-      val raml = port.toRaml[IpDiscoveryPort]
-      raml.name should be(port.name)
-      raml.number should be(port.number)
-      raml.protocol should be(NetworkProtocol.Tcp)
-    }
-
-    "DiscoveryInfo is converted correctly" in {
-      val port = state.DiscoveryInfo.Port(123, "test", "tcp", Map("foo" -> "bla"))
-      val info = state.DiscoveryInfo(Seq(port))
-      val raml = info.toRaml[IpDiscovery]
-      raml.ports should have size 1
-    }
-
-    "IPAddress is converted correctly" in {
-      val port = state.DiscoveryInfo.Port(123, "test", "tcp", Map("foo" -> "bla"))
-      val info = state.DiscoveryInfo(Seq(port))
-      val ip = state.IpAddress(Seq("name"), Map("foo" -> "bla"), info, Some("network"))
-      val raml = ip.toRaml[IpAddress]
-      raml.discovery should be(Some(info.toRaml[IpDiscovery]))
-      raml.groups should be(ip.groups)
-      raml.labels should be(ip.labels)
-      raml.networkName should be(ip.networkName)
     }
   }
 }

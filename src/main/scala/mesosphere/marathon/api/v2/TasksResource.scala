@@ -107,8 +107,7 @@ class TasksResource @Inject() (
       val rootGroup = groupManager.rootGroup()
       val appsToEndpointString = EndpointsHelper.appsToEndpointString(
         instancesBySpec,
-        rootGroup.transitiveApps.filterAs(app => isAuthorized(ViewRunSpec, app))(collection.breakOut),
-        "\t"
+        rootGroup.transitiveApps.filterAs(app => isAuthorized(ViewRunSpec, app))(collection.breakOut)
       )
       ok(appsToEndpointString)
     })

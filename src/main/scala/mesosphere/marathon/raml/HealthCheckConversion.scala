@@ -2,7 +2,7 @@ package mesosphere.marathon
 package raml
 
 import mesosphere.marathon.Protos.HealthCheckDefinition
-import mesosphere.marathon.core.health._
+import mesosphere.marathon.core.health.{ HealthCheck => CoreHealthCheck, _ }
 import mesosphere.marathon.state.{ ArgvList, Command, Executable }
 
 import scala.concurrent.duration._
@@ -36,7 +36,7 @@ trait HealthCheckConversion {
         maxConsecutiveFailures = maxConFailures,
         delay = delay.seconds,
         path = httpCheck.path,
-        protocol = httpCheck.scheme.map(Raml.fromRaml(_)).getOrElse(HealthCheckDefinition.Protocol.HTTP),
+        protocol = httpCheck.scheme.map(Raml.fromRaml[HttpScheme, HealthCheckDefinition.Protocol]).getOrElse(HealthCheckDefinition.Protocol.HTTP),
         portIndex = Some(PortReference(httpCheck.endpoint))
       )
     case HealthCheck(None, Some(tcpCheck), None, gracePeriod, interval, maxConFailures, timeout, delay) =>
@@ -103,7 +103,7 @@ trait HealthCheckConversion {
     }
   }
 
-  implicit val appHealthCheckWrites: Writes[core.health.HealthCheck, AppHealthCheck] = Writes { health =>
+  implicit val appHealthCheckWrites: Writes[CoreHealthCheck, AppHealthCheck] = Writes { health =>
 
     implicit val commandCheckWrites: Writes[state.Executable, CommandCheck] = Writes {
       case state.Command(value) => CommandCheck(value)
@@ -159,6 +159,75 @@ trait HealthCheckConversion {
   implicit val taskLostBehaviorWrites: Writes[TaskLostProto, TaskLostBehavior] = Writes {
     case TaskLostProto.WAIT_FOREVER => TaskLostBehavior.WaitForever
     case TaskLostProto.RELAUNCH_AFTER_TIMEOUT => TaskLostBehavior.RelaunchAfterTimeout
+  }
+
+  implicit val appHealthCheckRamlReader = Reads[AppHealthCheck, CoreHealthCheck] { check =>
+    val result: CoreHealthCheck = check match {
+      case AppHealthCheck(Some(command), grace, _, interval, failures, None, None, _, proto, timeout, delay) =>
+        // we allow, but ignore, a port-index for backwards compatibility
+        if (proto != AppHealthCheckProtocol.Command) // validation should have failed this already
+          throw SerializationFailedException(s"illegal protocol $proto specified with command")
+        MesosCommandHealthCheck(
+          gracePeriod = grace.seconds,
+          interval = interval.seconds,
+          timeout = timeout.seconds,
+          maxConsecutiveFailures = failures,
+          command = Command(command.value),
+          delay = delay.seconds
+        )
+      case AppHealthCheck(None, grace, ignore1xx, interval, failures, path, port, index, proto, timeout, delay) =>
+        proto match {
+          case AppHealthCheckProtocol.MesosHttp | AppHealthCheckProtocol.MesosHttps =>
+            MesosHttpHealthCheck(
+              gracePeriod = grace.seconds,
+              interval = interval.seconds,
+              timeout = timeout.seconds,
+              maxConsecutiveFailures = failures,
+              portIndex = index.map(PortReference(_)),
+              port = port,
+              path = path,
+              protocol =
+                if (proto == AppHealthCheckProtocol.MesosHttp) Protos.HealthCheckDefinition.Protocol.MESOS_HTTP
+                else Protos.HealthCheckDefinition.Protocol.MESOS_HTTPS,
+              delay = delay.seconds
+            )
+          case AppHealthCheckProtocol.MesosTcp =>
+            MesosTcpHealthCheck(
+              gracePeriod = grace.seconds,
+              interval = interval.seconds,
+              timeout = timeout.seconds,
+              maxConsecutiveFailures = failures,
+              portIndex = index.map(PortReference(_)),
+              port = port,
+              delay = delay.seconds
+            )
+          case AppHealthCheckProtocol.Http | AppHealthCheckProtocol.Https =>
+            MarathonHttpHealthCheck(
+              gracePeriod = grace.seconds,
+              interval = interval.seconds,
+              timeout = timeout.seconds,
+              maxConsecutiveFailures = failures,
+              portIndex = index.map(PortReference(_)),
+              port = port,
+              path = path,
+              protocol =
+                if (proto == AppHealthCheckProtocol.Http) Protos.HealthCheckDefinition.Protocol.HTTP
+                else Protos.HealthCheckDefinition.Protocol.HTTPS
+            )
+          case AppHealthCheckProtocol.Tcp =>
+            MarathonTcpHealthCheck(
+              gracePeriod = grace.seconds,
+              interval = interval.seconds,
+              timeout = timeout.seconds,
+              maxConsecutiveFailures = failures,
+              portIndex = index.map(PortReference(_)),
+              port = port
+            )
+          case _ =>
+            throw SerializationFailedException(s"illegal protocol $proto for non-command health check")
+        }
+    }
+    result
   }
 }
 

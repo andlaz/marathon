@@ -23,7 +23,7 @@ trait UnreachableStrategyConversion {
         inactiveAfterSeconds = strategy.inactiveAfter.toSeconds,
         expungeAfterSeconds = strategy.expungeAfter.toSeconds)
     case state.UnreachableDisabled =>
-      UnreachableDisabled("disabled")
+      UnreachableDisabled.DefaultValue
   }
 }
 

@@ -5,7 +5,7 @@ import akka.actor.{ ActorSystem, Scheduler }
 import akka.stream.Materializer
 import mesosphere.marathon.core.storage.store.impl.cache.LoadTimeCachingPersistenceStore
 import mesosphere.marathon.metrics.Metrics
-import mesosphere.marathon.storage.migration.Migration
+import mesosphere.marathon.storage.migration.{ Migration, ServiceDefinitionRepository }
 import mesosphere.marathon.storage.repository._
 
 import scala.collection.immutable.Seq
@@ -60,9 +60,9 @@ object StorageModule {
             Nil
         }
 
-        val migration = new Migration(zk.availableFeatures, store, appRepository, groupRepository,
+        val migration = new Migration(zk.availableFeatures, zk.defaultNetworkName, store, appRepository, groupRepository,
           deploymentRepository, taskRepository, instanceRepository, taskFailureRepository,
-          frameworkIdRepository, eventSubscribersRepository)
+          frameworkIdRepository, eventSubscribersRepository, ServiceDefinitionRepository.zkRepository(store))
         StorageModuleImpl(
           instanceRepository,
           deploymentRepository,
@@ -92,9 +92,9 @@ object StorageModule {
             Nil
         }
 
-        val migration = new Migration(mem.availableFeatures, store, appRepository, groupRepository,
+        val migration = new Migration(mem.availableFeatures, mem.defaultNetworkName, store, appRepository, groupRepository,
           deploymentRepository, taskRepository, instanceRepository, taskFailureRepository,
-          frameworkIdRepository, eventSubscribersRepository)
+          frameworkIdRepository, eventSubscribersRepository, ServiceDefinitionRepository.inMemRepository(store))
         StorageModuleImpl(
           instanceRepository,
           deploymentRepository,

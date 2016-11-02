@@ -1,7 +1,7 @@
 package mesosphere.marathon
 package raml
 
-import mesosphere.marathon.core
+import scala.concurrent.duration._
 
 trait ReadinessConversions {
 
@@ -18,6 +18,24 @@ trait ReadinessConversions {
       portName = check.portName,
       intervalSeconds = check.interval.toSeconds.toInt,
       timeoutSeconds = check.timeout.toSeconds.toInt,
+      httpStatusCodesForReady = check.httpStatusCodesForReady,
+      preserveLastResponse = check.preserveLastResponse
+    )
+  }
+
+  implicit val readinessProtocolReads: Reads[HttpScheme, core.readiness.ReadinessCheck.Protocol] = Reads {
+    case HttpScheme.Http => core.readiness.ReadinessCheck.Protocol.HTTP
+    case HttpScheme.Https => core.readiness.ReadinessCheck.Protocol.HTTPS
+  }
+
+  implicit val appReadinessRamlReader = Reads[ReadinessCheck, core.readiness.ReadinessCheck] { check =>
+    core.readiness.ReadinessCheck(
+      name = check.name,
+      protocol = check.protocol.fromRaml,
+      path = check.path,
+      portName = check.portName,
+      interval = check.intervalSeconds.seconds,
+      timeout = check.timeoutSeconds.seconds,
       httpStatusCodesForReady = check.httpStatusCodesForReady,
       preserveLastResponse = check.preserveLastResponse
     )

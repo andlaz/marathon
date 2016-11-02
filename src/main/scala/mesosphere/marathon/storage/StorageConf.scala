@@ -1,6 +1,7 @@
 package mesosphere.marathon.storage
 
 import mesosphere.marathon.ZookeeperConf
+import org.rogach.scallop.ScallopOption
 
 trait StorageConf extends ZookeeperConf {
   lazy val internalStoreBackend = opt[String](
@@ -41,6 +42,8 @@ trait StorageConf extends ZookeeperConf {
     descrYes = "(Default) Enable an additional layer of caching for object versions when store_cache is enabled.",
     prefix = "disable_"
   )
+
+  def defaultNetworkName: ScallopOption[String]
 
   def availableFeatures: Set[String]
 }
