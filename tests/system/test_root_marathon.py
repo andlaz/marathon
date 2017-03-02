@@ -2,6 +2,7 @@
    Marathon.
 """
 
+import os
 import pytest
 import retrying
 
@@ -178,6 +179,40 @@ def _test_declined_offer(app_id, app_def, reason):
         assert role_summary['processed'] > 0
         assert last_attempt['declined'] > 0
         assert last_attempt['processed'] > 0
+
+
+def test_private_repository_docker_app():
+    # Create and copy docker credentials to all private agents
+    agents = get_private_agents()
+    create_and_copy_docker_credentials_file(agents)
+
+    client = marathon.create_client()
+    app_def = private_docker_container_app()
+    client.add_app(app_def)
+    deployment_wait()
+
+    assert_app_tasks_running(client, app_def)
+
+
+@pytest.mark.skip(reason="Not yet implemented is mesos")
+def test_private_repository_mesos_app():
+    """ Test private docker registry with mesos containerizer using "credentials" container field.
+        Note: Despite of what DC/OS docmentation states this feature is not yet implemented:
+        https://issues.apache.org/jira/browse/MESOS-7088
+    """
+
+    client = marathon.create_client()
+    assert 'DOCKER_HUB_USERNAME' in os.environ, "Couldn't find docker hub username. $DOCKER_HUB_USERNAME is not set"
+    assert 'DOCKER_HUB_PASSWORD' in os.environ, "Couldn't find docker hub password. $DOCKER_HUB_PASSWORD is not set"
+
+    principal = os.environ['DOCKER_HUB_USERNAME']
+    secret = os.environ['DOCKER_HUB_PASSWORD']
+
+    app_def = private_mesos_container_app(principal, secret)
+    client.add_app(app_def)
+    deployment_wait()
+
+    assert_app_tasks_running(client, app_def)
 
 
 def setup_function(function):

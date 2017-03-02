@@ -330,6 +330,45 @@ def health_check(path='/', port_index=0, failures=1, timeout=2):
         }
 
 
+def private_docker_container_app(docker_credentials_filename='docker.tar.gz'):
+    return {
+        "id": "/private-docker-app",
+        "instances": 1,
+        "cpus": 1,
+        "mem": 128,
+        "container": {
+        "type": 'DOCKER',
+        "docker": {
+            "image": "mesosphere/simple-docker-ee:latest",
+            }
+        },
+        "fetch": [
+            {
+            "uri": "file:///home/core/{}".format(docker_credentials_filename)
+            }
+        ]
+    }
+
+
+def private_mesos_container_app(principal, secret):
+    return {
+        "id": "/private-mesos-app",
+        "instances": 1,
+        "cpus": 1,
+        "mem": 128,
+        "container": {
+        "type": 'MESOS',
+        "docker": {
+            "image": "mesosphere/simple-docker-ee:latest",
+            "credential": {
+                "principal": principal,
+                "secret": secret
+                }
+            }
+        }
+    }
+
+
 def cluster_info(mom_name='marathon-user'):
     agents = get_private_agents()
     print("agents: {}".format(len(agents)))
@@ -510,3 +549,88 @@ def dcos_canonical_version():
 
 def dcos_version_less_than(version):
     return dcos_canonical_version() < LooseVersion(version)
+
+
+def assert_app_tasks_running(client, app_def):
+    app_id = app_def['id']
+    instances = app_def['instances']
+    
+    app = client.get_app(app_id)
+    assert app['tasksRunning'] == instances
+
+
+def assert_app_tasks_healthy(client, app_def):
+    app_id = app_def['id']
+    instances = app_def['instances']
+    
+    app = client.get_app(app_id)
+    assert app['tasksHealthy'] == instances
+
+
+def create_docker_credentials_file(file_name='docker.tar.gz'):
+    """ Create a docker credentials file. Docker username and password are passed 
+        as environment variables `DOCKER_HUB_USERNAME` and `DOCKER_HUB_PASSWORD` 
+        by jenkins. Using both a `{file_name}` with `.docker/config.json` is 
+        created containing the credentials.
+
+        :param file_name: credentials file name `docker.tar.gz` by default
+        :type command: str
+    """
+
+    assert 'DOCKER_HUB_USERNAME' in os.environ, "Couldn't find docker hub username. $DOCKER_HUB_USERNAME is not set"
+    assert 'DOCKER_HUB_PASSWORD' in os.environ, "Couldn't find docker hub password. $DOCKER_HUB_PASSWORD is not set"
+
+    username = os.environ['DOCKER_HUB_USERNAME']
+    password = os.environ['DOCKER_HUB_PASSWORD']
+
+    print('Creating a tarball {} with json credentials for dockerhub username {}'.format(file_name, username))
+    config_json_filename = 'config.json'
+
+    import base64
+    auth_hash = base64.b64encode('{}:{}'.format(username, password).encode()).decode()
+
+    config_json = {
+      "auths": {
+        "https://index.docker.io/v1/": {
+          "auth": auth_hash
+        }
+      }
+    }
+
+    # Write config.json to file
+    with open(config_json_filename, 'w') as f:
+        json.dump(config_json, f, indent=4)
+
+    try:
+        # Create a docker.tar.gz
+        import tarfile
+        with tarfile.open(file_name, 'w:gz') as tar:
+            tar.add(config_json_filename, arcname='.docker/config.json')
+            tar.close()
+    except Exception as e:
+        print('Failed to create a docker credentils file {}'.format(e))
+        raise e
+    finally:
+        os.remove(config_json_filename)
+
+
+def create_and_copy_docker_credentials_file(agents, file_name='docker.tar.gz'):
+    """ Create and copy docker credentials file to passed `{agents}`. Used to access private
+        docker repositories in tests. File is removed at the end.
+
+        :param agents: list of agent IPs to copy the file to
+        :type agents: list
+    """
+    create_docker_credentials_file(file_name)
+
+    # Upload docker.tar.gz to all private agents
+    try:
+        print('Uploading tarball with docker credentials to all private agents...')
+        for agent in agents:
+            print("Copying docker credentials to {}".format(agent))
+            copy_file_to_agent(agent, file_name)
+    except Exception as e:
+        print('Failed to upload {} to agent: {}'.format(file_name, agent))
+        raise e
+    finally:
+        os.remove(file_name)
