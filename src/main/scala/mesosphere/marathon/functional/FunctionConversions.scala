@@ -74,6 +74,9 @@ trait FunctionConversions {
   @inline implicit def asLongFunction[A](f: A => Long): ToLongFunction[A] = asJavaToLongFunction[A](f)
   @inline implicit def asUnaryOperator[A](f: A => A): UnaryOperator[A] = asJavaUnaryOperator[A](f)
 
+  @inline implicit def asFunction[A, R](f: A => R): Function[A, R]  = new Function[A, R] {
+    override def apply(t: A): R = f(t)
+  }
 }
 
 object FunctionConversions extends FunctionConversions

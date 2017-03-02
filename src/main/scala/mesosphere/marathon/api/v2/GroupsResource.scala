@@ -14,12 +14,12 @@ import mesosphere.marathon.api.v2.json.Formats._
 import mesosphere.marathon.api.v2.json.GroupUpdate
 import mesosphere.marathon.api.{ AuthResource, MarathonMediaType }
 import mesosphere.marathon.core.appinfo.{ GroupInfo, GroupInfoService, Selector }
+import mesosphere.marathon.core.deployment.DeploymentPlan
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.plugin.auth._
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.state._
 import mesosphere.marathon.stream.Implicits._
-import mesosphere.marathon.core.deployment.DeploymentPlan
 import mesosphere.marathon.stream.Sink
 import play.api.libs.json.Json
 
@@ -73,7 +73,7 @@ class GroupsResource @Inject() (
     @QueryParam("embed") embed: java.util.Set[String],
     @Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
 
-    import scala.concurrent.ExecutionContext.Implicits.global
+    import mesosphere.marathon.core.async.ExecutionContexts.global
 
     val embeds: Set[String] = if (embed.isEmpty) defaultEmbeds else embed
     val (appEmbed, groupEmbed) = resolveAppGroup(embeds)

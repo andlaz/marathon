@@ -7,6 +7,7 @@ import javax.inject.Provider
 import akka.event.EventStream
 import com.codahale.metrics.MetricRegistry
 import mesosphere.AkkaTest
+import mesosphere.marathon.core.async.ExecutionContexts
 import mesosphere.marathon.core.group.GroupManagerModule
 import mesosphere.marathon.io.storage.StorageProvider
 import mesosphere.marathon.metrics.Metrics
@@ -14,7 +15,7 @@ import mesosphere.marathon.state.RootGroup
 import mesosphere.marathon.storage.repository.GroupRepository
 import mesosphere.marathon.test.Mockito
 
-import scala.concurrent.{ ExecutionContext, Future }
+import scala.concurrent.Future
 
 class TestGroupManagerFixture(initialRoot: RootGroup = RootGroup.empty) extends Mockito with AkkaTest {
   val service = mock[MarathonSchedulerService]
@@ -40,7 +41,7 @@ class TestGroupManagerFixture(initialRoot: RootGroup = RootGroup.empty) extends 
     scheduler = schedulerProvider,
     groupRepo = groupRepository,
     storage = provider,
-    metrics = metrics)(ExecutionContext.global, eventBus)
+    metrics = metrics)(ExecutionContexts.global, eventBus)
 
   val groupManager = groupManagerModule.groupManager
 }

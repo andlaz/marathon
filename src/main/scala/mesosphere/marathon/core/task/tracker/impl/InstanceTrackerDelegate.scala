@@ -4,8 +4,7 @@ package core.task.tracker.impl
 import java.util.concurrent.TimeoutException
 
 import akka.actor.ActorRef
-import akka.pattern.ask
-import akka.pattern.AskTimeoutException
+import akka.pattern.{ AskTimeoutException, ask }
 import akka.util.Timeout
 import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.task.tracker.{ InstanceTracker, InstanceTrackerConfig }
@@ -30,7 +29,7 @@ private[tracker] class InstanceTrackerDelegate(
     taskTrackerRef: ActorRef) extends InstanceTracker {
 
   override def instancesBySpecSync: InstanceTracker.InstancesBySpec = {
-    import ExecutionContext.Implicits.global
+    import mesosphere.marathon.core.async.ExecutionContexts.global
     Await.result(instancesBySpec(), taskTrackerQueryTimeout.duration)
   }
 

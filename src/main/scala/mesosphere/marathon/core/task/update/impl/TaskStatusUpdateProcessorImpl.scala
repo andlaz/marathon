@@ -1,12 +1,11 @@
 package mesosphere.marathon
 package core.task.update.impl
 
-import com.typesafe.scalalogging.StrictLogging
 import javax.inject.Inject
 
 import akka.event.EventStream
 import com.google.inject.name.Names
-import mesosphere.marathon.MarathonSchedulerDriverHolder
+import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.base.Clock
 import mesosphere.marathon.core.condition.Condition
 import mesosphere.marathon.core.event.UnknownInstanceTerminated
@@ -15,7 +14,7 @@ import mesosphere.marathon.core.instance.update.InstanceUpdateOperation
 import mesosphere.marathon.core.task.termination.{ KillReason, KillService }
 import mesosphere.marathon.core.task.tracker.{ InstanceTracker, TaskStateOpProcessor }
 import mesosphere.marathon.core.task.update.TaskStatusUpdateProcessor
-import mesosphere.marathon.core.task.{ TaskCondition, Task }
+import mesosphere.marathon.core.task.{ Task, TaskCondition }
 import mesosphere.marathon.metrics.Metrics.Timer
 import mesosphere.marathon.metrics.{ MetricPrefixes, Metrics }
 import org.apache.mesos.{ Protos => MesosProtos }
@@ -33,7 +32,7 @@ class TaskStatusUpdateProcessorImpl @Inject() (
     driverHolder: MarathonSchedulerDriverHolder,
     killService: KillService,
     eventStream: EventStream) extends TaskStatusUpdateProcessor with StrictLogging {
-  import scala.concurrent.ExecutionContext.Implicits.global
+  import mesosphere.marathon.core.async.ExecutionContexts.global
 
   private[this] val publishTimer: Timer =
     metrics.timer(metrics.name(MetricPrefixes.SERVICE, getClass, "publishFuture"))

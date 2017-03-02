@@ -6,8 +6,8 @@ import akka.event.EventStream
 import akka.pattern.after
 import com.codahale.metrics.{ Gauge, MetricRegistry }
 import com.typesafe.scalalogging.StrictLogging
-import mesosphere.marathon.core.base._
-import mesosphere.marathon.core.base.ShutdownHooks
+import mesosphere.marathon.core.async.ExecutionContexts
+import mesosphere.marathon.core.base.{ ShutdownHooks, _ }
 import mesosphere.marathon.core.election.{ ElectionCandidate, ElectionService, LocalLeadershipEvent }
 import mesosphere.marathon.metrics.Metrics.Timer
 import mesosphere.marathon.metrics.{ MetricPrefixes, Metrics }
@@ -48,7 +48,7 @@ abstract class ElectionServiceBase(
 
   private[impl] var state: State = Idle(candidate = None)
 
-  protected implicit val executionContext: ExecutionContext = ExecutionContext.global
+  protected implicit val executionContext: ExecutionContext = ExecutionContexts.global
 
   def leaderHostPortImpl: Option[String]
 

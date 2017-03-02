@@ -10,6 +10,7 @@ import com.codahale.metrics.annotation.Timed
 import mesosphere.marathon.api._
 import mesosphere.marathon.api.v2.json.Formats._
 import mesosphere.marathon.core.appinfo.EnrichedTask
+import mesosphere.marathon.core.async.ExecutionContexts.global
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.instance.Instance
@@ -23,7 +24,6 @@ import org.slf4j.LoggerFactory
 
 import scala.async.Async._
 import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
 
 @Consumes(Array(MediaType.APPLICATION_JSON))
 @Produces(Array(MarathonMediaType.PREFERRED_APPLICATION_JSON))

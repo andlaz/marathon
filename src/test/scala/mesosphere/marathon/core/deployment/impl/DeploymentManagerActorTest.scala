@@ -13,6 +13,7 @@ import akka.util.Timeout
 import com.codahale.metrics.MetricRegistry
 import mesosphere.AkkaUnitTest
 import mesosphere.marathon.MarathonSchedulerActor.{ DeploymentFailed, DeploymentStarted }
+import mesosphere.marathon.core.async.ExecutionContexts
 import mesosphere.marathon.core.deployment.DeploymentPlan
 import mesosphere.marathon.core.deployment.impl.DeploymentActor.Cancel
 import mesosphere.marathon.core.deployment.impl.DeploymentManagerActor._
@@ -200,7 +201,7 @@ class DeploymentManagerActorTest extends AkkaUnitTest with ImplicitSender with G
       verify()
     }
     implicit val metrics: Metrics = new Metrics(new MetricRegistry)
-    implicit val ctx: ExecutionContext = ExecutionContext.global
+    implicit val ctx: ExecutionContext = ExecutionContexts.global
     val taskTracker: InstanceTracker = MarathonTestHelper.createTaskTracker(
       AlwaysElectedLeadershipModule.forActorSystem(system)
     )

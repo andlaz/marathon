@@ -33,7 +33,7 @@ abstract class BackupRestoreAction extends StrictLogging {
     implicit val materializer = ActorMaterializer()
     implicit val metrics = new Metrics(new MetricRegistry())
     implicit val scheduler = system.scheduler
-    import scala.concurrent.ExecutionContext.Implicits.global
+    import mesosphere.marathon.core.async.ExecutionContexts.global
     try {
       val storageModule = StorageModule(conf)
       val backup = storageModule.persistentStoreBackup
