@@ -2,6 +2,8 @@ package mesosphere.marathon
 package raml
 
 import mesosphere.marathon.core.pod
+import mesosphere.marathon.stream.Implicits._
+import mesosphere.mesos.protos.Implicits._
 
 trait NetworkConversion {
 
@@ -33,10 +35,8 @@ trait NetworkConversion {
     case pod.HostNetwork => Network(mode = NetworkMode.Host)
   }
 
-  implicit val protocolWrites: Writes[String, NetworkProtocol] = Writes {
-    case "tcp" => NetworkProtocol.Tcp
-    case "udp" => NetworkProtocol.Udp
-    case "udp,tcp" => NetworkProtocol.UdpTcp
+  implicit val protocolWrites: Writes[String, NetworkProtocol] = Writes { protocol =>
+    NetworkProtocol.fromString(protocol).getOrElse(throw new IllegalStateException(s"unsupported protocol $protocol"))
   }
 
   implicit val portDefinitionWrites: Writes[state.PortDefinition, PortDefinition] = Writes { port =>
@@ -51,6 +51,21 @@ trait NetworkConversion {
       name = portMapping.name,
       protocol = portMapping.protocol.toRaml[NetworkProtocol],
       servicePort = portMapping.servicePort
+    )
+  }
+
+  implicit val networkProtoRamlWriter: Writes[Protos.NetworkDefinition, Network] = Writes { net =>
+    import Protos.NetworkDefinition.Mode._
+    val mode = net.getMode match {
+      case HOST => NetworkMode.Host
+      case BRIDGE => NetworkMode.ContainerBridge
+      case CONTAINER => NetworkMode.Container
+      case badMode => throw new IllegalStateException(s"unsupported network mode $badMode")
+    }
+    Network(
+      name = if (net.hasName) Option(net.getName) else Network.DefaultName,
+      mode = mode,
+      labels = if (net.getLabelsCount > 0) net.getLabelsList.to[Seq].fromProto else Network.DefaultLabels
     )
   }
 }

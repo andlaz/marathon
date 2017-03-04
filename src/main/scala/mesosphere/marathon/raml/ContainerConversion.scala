@@ -3,6 +3,8 @@ package raml
 
 import mesosphere.marathon.core.pod.MesosContainer
 import mesosphere.marathon.state.Parameter
+import mesosphere.marathon.stream.Implicits._
+import mesosphere.mesos.protos.Implicits._
 import org.apache.mesos.{ Protos => Mesos }
 
 trait ContainerConversion extends HealthCheckConversion with VolumeConversion {
@@ -90,7 +92,7 @@ trait ContainerConversion extends HealthCheckConversion with VolumeConversion {
     }
   }
 
-  implicit val portMappingRamlReader = Reads[ContainerPortMapping, state.Container.PortMapping] {
+  implicit val portMappingRamlReader: Reads[ContainerPortMapping, state.Container.PortMapping] = Reads {
     case ContainerPortMapping(containerPort, hostPort, labels, name, protocol, servicePort) =>
       import state.Container.PortMapping._
       val decodedProto = protocol match {
@@ -147,6 +149,109 @@ trait ContainerConversion extends HealthCheckConversion with VolumeConversion {
       case ct => throw SerializationFailedException(s"illegal container specification $ct")
     }
     result
+  }
+
+  implicit val containerTypeProtoToRamlWriter: Writes[org.apache.mesos.Protos.ContainerInfo.Type, EngineType] = Writes { ctype =>
+    import org.apache.mesos.Protos.ContainerInfo.Type._
+    ctype match {
+      case MESOS => EngineType.Mesos
+      case DOCKER => EngineType.Docker
+      case badContainerType => throw new IllegalStateException(s"unsupported container type $badContainerType")
+    }
+  }
+
+  implicit val appcProtoToRamlWriter: Writes[Protos.ExtendedContainerInfo.MesosAppCInfo, AppCContainer] = Writes { appc =>
+    AppCContainer(
+      image = appc.getImage,
+      id = if (appc.hasId) Option(appc.getId) else AppCContainer.DefaultId,
+      labels = appc.whenOrElse(_.getLabelsCount > 0, _.getLabelsList.flatMap(_.fromProto)(collection.breakOut), AppCContainer.DefaultLabels),
+      forcePullImage = if (appc.hasForcePullImage) appc.getForcePullImage else AppCContainer.DefaultForcePullImage
+    )
+  }
+
+  implicit val dockerNetworkProtoToRamlWriter: Writes[Mesos.ContainerInfo.DockerInfo.Network, DockerNetwork] = Writes { net =>
+    import Mesos.ContainerInfo.DockerInfo.Network._
+    net match {
+      case HOST => DockerNetwork.Host
+      case BRIDGE => DockerNetwork.Bridge
+      case USER => DockerNetwork.User
+      case NONE => DockerNetwork.None
+    }
+  }
+
+  implicit val dockerParameterProtoRamlWriter: Writes[Mesos.Parameter, DockerParameter] = Writes { param =>
+    DockerParameter(
+      key = param.getKey,
+      value = param.getValue
+    )
+  }
+
+  implicit val dockerPortMappingProtoRamlWriter: Writes[Protos.ExtendedContainerInfo.DockerInfo.ObsoleteDockerPortMapping, ContainerPortMapping] = Writes { mapping =>
+    ContainerPortMapping(
+      containerPort = mapping.whenOrElse(_.hasContainerPort, _.getContainerPort, ContainerPortMapping.DefaultContainerPort),
+      hostPort = mapping.when(_.hasHostPort, _.getHostPort).orElse(ContainerPortMapping.DefaultHostPort),
+      labels = mapping.whenOrElse(_.getLabelsCount > 0, _.getLabelsList.flatMap(_.fromProto)(collection.breakOut), ContainerPortMapping.DefaultLabels),
+      name = mapping.when(_.hasName, _.getName).orElse(ContainerPortMapping.DefaultName),
+      protocol = mapping.whenOrElse(_.hasProtocol, _.getProtocol.toRaml[NetworkProtocol], ContainerPortMapping.DefaultProtocol),
+      servicePort = mapping.whenOrElse(_.hasServicePort, _.getServicePort, ContainerPortMapping.DefaultServicePort)
+    )
+  }
+
+  implicit val dockerProtoToRamlWriter: Writes[Protos.ExtendedContainerInfo.DockerInfo, DockerContainer] = Writes { docker =>
+    DockerContainer(
+      credential = DockerContainer.DefaultCredential, // we don't store credentials in protobuf
+      forcePullImage = docker.when(_.hasForcePullImage, _.getForcePullImage).getOrElse(DockerContainer.DefaultForcePullImage),
+      image = docker.getImage,
+      network = docker.when(_.hasOBSOLETENetwork, _.getOBSOLETENetwork.toRaml).orElse(DockerContainer.DefaultNetwork),
+      parameters = docker.whenOrElse(_.getParametersCount > 0, _.getParametersList.map(_.toRaml)(collection.breakOut), DockerContainer.DefaultParameters),
+      portMappings = docker.whenOrElse(_.getOBSOLETEPortMappingsCount > 0, _.getOBSOLETEPortMappingsList.map(_.toRaml)(collection.breakOut), DockerContainer.DefaultPortMappings),
+      privileged = docker.when(_.hasPrivileged, _.getPrivileged).getOrElse(DockerContainer.DefaultPrivileged)
+    )
+  }
+
+  implicit val dockerCredentialsProtoRamlWriter: Writes[Mesos.Credential, DockerCredentials] = Writes { cred =>
+    DockerCredentials(
+      principal = cred.getPrincipal,
+      secret = cred.when(_.hasSecret, _.getSecret).orElse(DockerCredentials.DefaultSecret)
+    )
+  }
+
+  implicit val mesosDockerProtoToRamlWriter: Writes[Protos.ExtendedContainerInfo.MesosDockerInfo, DockerContainer] = Writes { docker =>
+    DockerContainer(
+      credential = docker.when(_.hasCredential, _.getCredential.toRaml).orElse(DockerContainer.DefaultCredential),
+      forcePullImage = docker.when(_.hasForcePullImage, _.getForcePullImage).getOrElse(DockerContainer.DefaultForcePullImage),
+      image = docker.getImage
+    // was never stored for mesos containers:
+    // - network
+    // - parameters
+    // - portMappings
+    // - privileged
+    )
+  }
+
+  implicit val containerPortMappingProtoRamlWriter: Writes[Protos.ExtendedContainerInfo.PortMapping, ContainerPortMapping] = Writes { mapping =>
+    ContainerPortMapping(
+      containerPort = mapping.whenOrElse(_.hasContainerPort, _.getContainerPort, ContainerPortMapping.DefaultContainerPort),
+      hostPort = mapping.when(_.hasHostPort, _.getHostPort).orElse(ContainerPortMapping.DefaultHostPort),
+      labels = mapping.whenOrElse(_.getLabelsCount > 0, _.getLabelsList.flatMap(_.fromProto)(collection.breakOut), ContainerPortMapping.DefaultLabels),
+      name = mapping.when(_.hasName, _.getName).orElse(ContainerPortMapping.DefaultName),
+      protocol = mapping.when(_.hasProtocol, _.getProtocol).flatMap(NetworkProtocol.fromString).getOrElse(ContainerPortMapping.DefaultProtocol),
+      servicePort = mapping.whenOrElse(_.hasServicePort, _.getServicePort, ContainerPortMapping.DefaultServicePort)
+    )
+  }
+
+  implicit val containerProtoToRamlWriter: Writes[Protos.ExtendedContainerInfo, Container] = Writes { container =>
+    Container(
+      `type` = container.when(_.hasType, _.getType.toRaml).getOrElse(Container.DefaultType),
+      docker =
+        container.collect {
+          case x if x.hasDocker => x.getDocker.toRaml
+          case x if x.hasMesosDocker => x.getMesosDocker.toRaml
+        }.orElse(Container.DefaultDocker),
+      appc = container.when(_.hasMesosAppC, _.getMesosAppC.toRaml).orElse(Container.DefaultAppc),
+      volumes = container.whenOrElse(_.getVolumesCount > 0, _.getVolumesList.map(_.toRaml)(collection.breakOut), Container.DefaultVolumes),
+      portMappings = container.whenOrElse(_.getPortMappingsCount > 0, _.getPortMappingsList.map(_.toRaml)(collection.breakOut), Container.DefaultPortMappings)
+    )
   }
 }
 

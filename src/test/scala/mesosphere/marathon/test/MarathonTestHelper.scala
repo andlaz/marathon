@@ -29,7 +29,7 @@ import mesosphere.marathon.state._
 import mesosphere.marathon.storage.repository.InstanceRepository
 import mesosphere.marathon.stream.Implicits._
 import mesosphere.mesos.protos.{ FrameworkID, OfferID, Range, RangesResource, Resource, ScalarResource, SlaveID }
-import mesosphere.mesos.protos.LabelHelpers._
+import mesosphere.mesos.protos.Implicits._
 import mesosphere.util.state.FrameworkId
 import org.apache.mesos.Protos.Resource.{ DiskInfo, ReservationInfo }
 import org.apache.mesos.Protos._
@@ -40,8 +40,6 @@ import scala.concurrent.ExecutionContext
 import scala.util.Random
 
 object MarathonTestHelper {
-
-  import mesosphere.mesos.protos.Implicits._
 
   lazy val clock = Clock()
 

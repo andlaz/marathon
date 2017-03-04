@@ -3,6 +3,8 @@ package raml
 
 import mesosphere.marathon.core.pod.{ EphemeralVolume, HostVolume, Volume => PodVolume }
 import mesosphere.marathon.state.{ DiskType, ExternalVolumeInfo, PersistentVolumeInfo }
+import mesosphere.marathon.stream.Implicits._
+import mesosphere.mesos.protos.Implicits._
 import org.apache.mesos.{ Protos => Mesos }
 
 trait VolumeConversion extends ConstraintConversion with DefaultConversions {
@@ -61,7 +63,7 @@ trait VolumeConversion extends ConstraintConversion with DefaultConversions {
 
   implicit val volumeReads: Reads[AppVolume, state.Volume] = Reads { vol =>
     def failed[T](msg: String): T =
-      throw new SerializationFailedException(msg)
+      throw SerializationFailedException(msg)
 
     val result: state.Volume = vol match {
       case AppVolume(ctPath, hostPath, None, Some(external), mode) =>
@@ -104,6 +106,43 @@ trait VolumeConversion extends ConstraintConversion with DefaultConversions {
       case v => failed(s"illegal volume specification $v")
     }
     result
+  }
+
+  implicit val appVolumeExternalProtoRamlWriter: Writes[Protos.Volume.ExternalVolumeInfo, ExternalVolume] = Writes { vol =>
+    ExternalVolume(
+      size = vol.when(_.hasSize, _.getSize).orElse(ExternalVolume.DefaultSize),
+      name = vol.when(_.hasName, _.getName).orElse(ExternalVolume.DefaultName),
+      provider = vol.when(_.hasProvider, _.getProvider).orElse(ExternalVolume.DefaultProvider),
+      options = vol.whenOrElse(_.getOptionsCount > 0, _.getOptionsList.map { x => x.getKey -> x.getValue }(collection.breakOut), ExternalVolume.DefaultOptions)
+    )
+  }
+
+  implicit val appPersistentVolTypeProtoRamlWriter: Writes[Mesos.Resource.DiskInfo.Source.Type, PersistentVolumeType] = Writes { typ =>
+    import Mesos.Resource.DiskInfo.Source.Type._
+    typ match {
+      case MOUNT => PersistentVolumeType.Mount
+      case PATH => PersistentVolumeType.Path
+      case badType => throw new IllegalStateException(s"unsupported Mesos resource disk-info source type $badType")
+    }
+  }
+
+  implicit val appVolumePersistentProtoRamlWriter: Writes[Protos.Volume.PersistentVolumeInfo, PersistentVolume] = Writes { vol =>
+    PersistentVolume(
+      `type` = vol.when(_.hasType, _.getType.toRaml).orElse(PersistentVolume.DefaultType),
+      size = vol.getSize,
+      maxSize = vol.when(_.hasMaxSize, _.getMaxSize).orElse(PersistentVolume.DefaultMaxSize),
+      constraints = vol.whenOrElse(_.getConstraintsCount > 0, _.getConstraintsList.map(_.toRaml[Seq[String]])(collection.breakOut), PersistentVolume.DefaultConstraints)
+    )
+  }
+
+  implicit val appVolumeProtoRamlWriter: Writes[Protos.Volume, AppVolume] = Writes { vol =>
+    AppVolume(
+      containerPath = vol.getContainerPath,
+      hostPath = vol.when(_.hasHostPath, _.getHostPath).orElse(AppVolume.DefaultHostPath),
+      persistent = vol.when(_.hasPersistent, _.getPersistent.toRaml).orElse(AppVolume.DefaultPersistent),
+      external = vol.when(_.hasExternal, _.getExternal.toRaml).orElse(AppVolume.DefaultExternal),
+      mode = vol.getMode.toRaml
+    )
   }
 }
 

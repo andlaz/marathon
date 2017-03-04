@@ -3,7 +3,7 @@ package api.serialization
 
 import mesosphere.marathon.state.PortDefinition
 import mesosphere.marathon.stream.Implicits._
-import mesosphere.mesos.protos.LabelHelpers._
+import mesosphere.mesos.protos.Implicits._
 import org.apache.mesos
 
 object PortDefinitionSerializer {

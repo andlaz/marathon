@@ -3,6 +3,8 @@ package raml
 
 import mesosphere.marathon.Protos.ResidencyDefinition
 import mesosphere.marathon.state._
+import mesosphere.marathon.stream.Implicits._
+import mesosphere.mesos.protos.Implicits._
 
 import scala.concurrent.duration._
 
@@ -108,15 +110,9 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
   }
 
   implicit val portDefinitionRamlReader: Reads[PortDefinition, state.PortDefinition] = Reads { portDef =>
-    val protocol: String = portDef.protocol match {
-      case NetworkProtocol.Tcp => "tcp"
-      case NetworkProtocol.Udp => "udp"
-      case NetworkProtocol.UdpTcp => "udp,tcp"
-    }
-
     state.PortDefinition(
       port = portDef.port,
-      protocol = protocol,
+      protocol = portDef.protocol.value,
       name = portDef.name,
       labels = portDef.labels
     )
@@ -129,6 +125,10 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
     )
   }
 
+  /**
+    * Generate an AppDefinition from an App RAML. Note: App.versionInfo is ignored, the resulting AppDefinition
+    * has a `versionInfo` constructed from `OnlyVersion(app.version)`.
+    */
   implicit val appRamlReader: Reads[App, AppDefinition] = Reads[App, AppDefinition] { app =>
     val selectedStrategy = ResidencyAndUpgradeStrategy(
       app.residency.map(Raml.fromRaml(_)),
@@ -222,6 +222,144 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
       taskKillGracePeriodSeconds = update.taskKillGracePeriodSeconds.orElse(app.taskKillGracePeriodSeconds),
       unreachableStrategy = update.unreachableStrategy.orElse(app.unreachableStrategy),
       killSelection = update.killSelection.orElse(app.killSelection)
+    )
+  }
+
+  //
+  // protobuf to RAML conversions, useful for migration
+  //
+
+  implicit val artifactProtoRamlWriter: Writes[org.apache.mesos.Protos.CommandInfo.URI, Artifact] = Writes { uri =>
+    Artifact(
+      uri = uri.getValue,
+      extract = uri.whenOrElse(_.hasExtract, _.getExtract, Artifact.DefaultExtract),
+      executable = uri.whenOrElse(_.hasExecutable, _.getExecutable, Artifact.DefaultExecutable),
+      cache = uri.whenOrElse(_.hasCache, _.getCache, Artifact.DefaultCache),
+      destPath = uri.when(_.hasOutputFile, _.getOutputFile).orElse(Artifact.DefaultDestPath)
+    )
+  }
+
+  implicit val portDefinitionProtoRamlWriter: Writes[org.apache.mesos.Protos.Port, PortDefinition] = Writes { port =>
+    PortDefinition(
+      port = port.whenOrElse(_.hasNumber, _.getNumber, PortDefinition.DefaultPort),
+      labels = port.getLabels.fromProto,
+      name = port.when(_.hasName, _.getName).orElse(PortDefinition.DefaultName),
+      protocol = port.when(_.hasProtocol, _.getProtocol).flatMap(NetworkProtocol.fromString).getOrElse(PortDefinition.DefaultProtocol)
+    )
+  }
+
+  implicit val upgradeStrategyProtoRamlWriter: Writes[Protos.UpgradeStrategyDefinition, UpgradeStrategy] = Writes { upgrade =>
+    UpgradeStrategy(
+      maximumOverCapacity = upgrade.getMaximumOverCapacity,
+      minimumHealthCapacity = upgrade.getMinimumHealthCapacity
+    )
+  }
+
+  implicit val taskLostProtoRamlWriter: Writes[Protos.ResidencyDefinition.TaskLostBehavior, TaskLostBehavior] = Writes { lost =>
+    import Protos.ResidencyDefinition.TaskLostBehavior._
+    lost match {
+      case WAIT_FOREVER => TaskLostBehavior.WaitForever
+      case RELAUNCH_AFTER_TIMEOUT => TaskLostBehavior.RelaunchAfterTimeout
+      case badBehavior => throw new IllegalStateException(s"unsupported value for task lost behavior $badBehavior")
+    }
+  }
+
+  implicit val residencyProtoRamlWriter: Writes[Protos.ResidencyDefinition, AppResidency] = Writes { res =>
+    AppResidency(
+      relaunchEscalationTimeoutSeconds = res.whenOrElse(
+        _.hasRelaunchEscalationTimeoutSeconds, _.getRelaunchEscalationTimeoutSeconds, AppResidency.DefaultRelaunchEscalationTimeoutSeconds),
+      taskLostBehavior = res.whenOrElse(_.hasTaskLostBehavior, _.getTaskLostBehavior.toRaml, AppResidency.DefaultTaskLostBehavior)
+    )
+  }
+
+  implicit val discoveryPortProtoRamlWriter: Writes[org.apache.mesos.Protos.Port, IpDiscoveryPort] = Writes { port =>
+    IpDiscoveryPort(
+      number = port.whenOrElse(_.hasNumber, _.getNumber, IpDiscoveryPort.DefaultNumber),
+      name = port.getName,
+      protocol = port.when(_.hasProtocol, _.getProtocol).flatMap(NetworkProtocol.fromString).getOrElse(IpDiscoveryPort.DefaultProtocol)
+    )
+  }
+
+  implicit val discoveryProtoRamlWriter: Writes[Protos.ObsoleteDiscoveryInfo, IpDiscovery] = Writes { di =>
+    IpDiscovery(
+      ports = di.whenOrElse(_.getPortsCount > 0, _.getPortsList.map(_.toRaml[IpDiscoveryPort])(collection.breakOut), IpDiscovery.DefaultPorts)
+    )
+  }
+
+  implicit val ipAddressProtoRamlWriter: Writes[Protos.ObsoleteIpAddress, IpAddress] = Writes { ip =>
+    IpAddress(
+      discovery = ip.when(_.hasDiscoveryInfo, _.getDiscoveryInfo.toRaml).orElse(IpAddress.DefaultDiscovery),
+      groups = ip.whenOrElse(_.getGroupsCount > 0, _.getGroupsList.to[Set], IpAddress.DefaultGroups),
+      labels = ip.whenOrElse(_.getLabelsCount > 0, _.getLabelsList.to[Seq].fromProto, IpAddress.DefaultLabels),
+      networkName = ip.when(_.hasNetworkName, _.getNetworkName).orElse(IpAddress.DefaultNetworkName)
+    )
+  }
+
+  implicit val appProtoRamlWriter: Writes[Protos.ServiceDefinition, App] = Writes { service =>
+    import mesosphere.mesos.protos.Resource
+
+    val resourcesMap: Map[String, Double] =
+      service.getResourcesList.map {
+        r => r.getName -> (r.getScalar.getValue: Double)
+      }(collection.breakOut)
+
+    def envMap: Map[String, EnvVarValueOrSecret] = (
+      if (service.hasCmd) {
+        service.getCmd.getEnvironment.getVariablesList.map { item =>
+          item.getName -> EnvVarValue(item.getValue)
+        }.toMap
+      } else {
+        App.DefaultEnv
+      }
+    ) ++ service.getEnvVarReferencesList.withFilter(_.getType == Protos.EnvVarReference.Type.SECRET).map { secretRef =>
+        secretRef.getName -> EnvVarSecretRef(secretRef.getSecretRef.getSecretId)
+      }
+
+    val versionInfo =
+      if (service.hasLastScalingAt) Option(VersionInfo(
+        lastConfigChangeAt = Timestamp(service.getLastConfigChangeAt).toOffsetDateTime,
+        lastScalingAt = Timestamp(service.getLastScalingAt).toOffsetDateTime
+      ))
+      else App.DefaultVersionInfo
+
+    App(
+      id = service.getId,
+      acceptedResourceRoles = if (service.hasAcceptedResourceRoles && service.getAcceptedResourceRoles.getRoleCount > 0) Option(service.getAcceptedResourceRoles.getRoleList.to[Set]) else App.DefaultAcceptedResourceRoles,
+      args = if (service.hasCmd && service.getCmd.getArgumentsCount > 0) service.getCmd.getArgumentsList.to[Seq] else App.DefaultArgs,
+      backoffFactor = service.whenOrElse(_.hasBackoffFactor, _.getBackoffFactor, App.DefaultBackoffFactor),
+      backoffSeconds = service.whenOrElse(_.hasBackoff, _.getBackoff.toInt, App.DefaultBackoffSeconds),
+      cmd = if (service.hasCmd && service.getCmd.hasValue) Option(service.getCmd.getValue) else App.DefaultCmd,
+      constraints = service.whenOrElse(_.getConstraintsCount > 0, _.getConstraintsList.map(_.toRaml[Seq[String]])(collection.breakOut), App.DefaultConstraints),
+      container = service.when(_.hasContainer, _.getContainer.toRaml).orElse(App.DefaultContainer),
+      cpus = resourcesMap.getOrElse(Resource.CPUS, App.DefaultCpus),
+      dependencies = service.whenOrElse(_.getDependenciesCount > 0, _.getDependenciesList.to[Set], App.DefaultDependencies),
+      disk = resourcesMap.getOrElse(Resource.DISK, App.DefaultDisk),
+      env = envMap,
+      executor = service.whenOrElse(_.hasExecutor, _.getExecutor, App.DefaultExecutor),
+      fetch = if (service.hasCmd && service.getCmd.getUrisCount > 0) service.getCmd.getUrisList.toRaml else App.DefaultFetch,
+      healthChecks = service.whenOrElse(_.getHealthChecksCount > 0, _.getHealthChecksList.toRaml.to[Set], App.DefaultHealthChecks),
+      instances = service.whenOrElse(_.hasInstances, _.getInstances, App.DefaultInstances),
+      labels = service.getLabelsList.map { label => label.getKey -> label.getValue }(collection.breakOut),
+      maxLaunchDelaySeconds = service.whenOrElse(_.hasMaxLaunchDelay, _.getMaxLaunchDelay.toInt, App.DefaultMaxLaunchDelaySeconds),
+      mem = resourcesMap.getOrElse(Resource.MEM, App.DefaultMem),
+      gpus = resourcesMap.get(Resource.GPUS).fold(App.DefaultGpus)(_.toInt),
+      ipAddress = service.when(_.hasOBSOLETEIpAddress, _.getOBSOLETEIpAddress.toRaml).orElse(App.DefaultIpAddress),
+      networks = service.whenOrElse(_.getNetworksCount > 0, _.getNetworksList.toRaml, App.DefaultNetworks),
+      ports = None, // not stored in protobuf
+      portDefinitions = App.DefaultPortDefinitions.unless(service.when(_.getPortDefinitionsCount > 0, _.getPortDefinitionsList.map(_.toRaml[PortDefinition])(collection.breakOut))),
+      readinessChecks = service.whenOrElse(_.getReadinessCheckDefinitionCount > 0, _.getReadinessCheckDefinitionList.toRaml, App.DefaultReadinessChecks),
+      residency = service.when(_.hasResidency, _.getResidency.toRaml).orElse(App.DefaultResidency),
+      requirePorts = service.whenOrElse(_.hasRequirePorts, _.getRequirePorts, App.DefaultRequirePorts),
+      secrets = service.whenOrElse(_.getSecretsCount > 0, _.getSecretsList.map(_.toRaml)(collection.breakOut), App.DefaultSecrets),
+      storeUrls = service.whenOrElse(_.getStoreUrlsCount > 0, _.getStoreUrlsList.to[Seq], App.DefaultStoreUrls),
+      taskKillGracePeriodSeconds = service.when(_.hasTaskKillGracePeriod, _.getTaskKillGracePeriod.toInt).orElse(App.DefaultTaskKillGracePeriodSeconds),
+      upgradeStrategy = service.when(_.hasUpgradeStrategy, _.getUpgradeStrategy.toRaml).orElse(App.DefaultUpgradeStrategy),
+      uris = None, // not stored in protobuf
+      user = if (service.hasCmd && service.getCmd.hasUser) Option(service.getCmd.getUser) else App.DefaultUser,
+      version = service.when(_.hasVersion, s => Timestamp(s.getVersion).toOffsetDateTime).orElse(App.DefaultVersion),
+      versionInfo = versionInfo, // we restore this but App-to-AppDefinition conversion drops it...
+      killSelection = App.DefaultKillSelection, // TODO(jdef) WTF this isn't stored in proto?
+      unreachableStrategy = service.when(_.hasUnreachableStrategy, _.getUnreachableStrategy.toRaml).orElse(App.DefaultUnreachableStrategy)
     )
   }
 }

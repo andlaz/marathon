@@ -11,7 +11,7 @@ import mesosphere.marathon.raml.Endpoint
 import mesosphere.marathon.state.{ EnvVarString, PathId, PortAssignment, Timestamp }
 import mesosphere.marathon.stream.Implicits._
 import mesosphere.marathon.tasks.PortsMatch
-import mesosphere.mesos.protos.LabelHelpers._
+import mesosphere.mesos.protos.Implicits._
 import org.apache.mesos.{ Protos => mesos }
 
 import scala.collection.immutable.Seq

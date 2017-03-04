@@ -10,7 +10,7 @@ import mesosphere.marathon.plugin.task.RunSpecTaskProcessor
 import mesosphere.marathon.state._
 import mesosphere.marathon.stream.Implicits._
 import mesosphere.mesos.ResourceMatcher.ResourceMatch
-import mesosphere.mesos.protos.LabelHelpers._
+import mesosphere.mesos.protos.Implicits._
 import org.apache.mesos.Protos.Environment._
 import org.apache.mesos.Protos._
 

@@ -25,6 +25,17 @@ trait UnreachableStrategyConversion {
     case state.UnreachableDisabled =>
       UnreachableDisabled.DefaultValue
   }
+
+  implicit val unreachableProtoRamlWrites = Writes[Protos.UnreachableStrategy, UnreachableStrategy]{ proto =>
+    if (proto.hasExpungeAfterSeconds && proto.hasInactiveAfterSeconds) {
+      UnreachableEnabled(
+        inactiveAfterSeconds = proto.getInactiveAfterSeconds,
+        expungeAfterSeconds = proto.getExpungeAfterSeconds
+      )
+    } else {
+      UnreachableDisabled.DefaultValue
+    }
+  }
 }
 
 object UnreachableStrategyConversion extends UnreachableStrategyConversion

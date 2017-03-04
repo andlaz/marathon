@@ -205,7 +205,13 @@ object RamlTypeGenerator {
       )
 
       val obj = OBJECTDEF(name) := BLOCK(
-        enumObjects ++ Seq(playJsonFormat) ++ default.map { defaultValue =>
+        enumObjects ++ Seq(
+          playJsonFormat,
+          VAL("StringToValue") withType(TYPE_MAP(StringClass, name)) withFlags(Flags.PRIVATE) := REF("Map") APPLY(sortedValues.map { enumValue =>
+            TUPLE(LIT(enumValue), REF(underscoreToCamel(camelify(enumValue))))
+          }),
+          DEF("fromString", TYPE_OPTION(name)) withParams(PARAM("v", StringClass)) := REF("StringToValue") DOT "get" APPLY(REF("v"))
+        ) ++ default.map { defaultValue =>
           VAL("DefaultValue") withType(name) := REF(underscoreToCamel(camelify(defaultValue)))
         }
       )

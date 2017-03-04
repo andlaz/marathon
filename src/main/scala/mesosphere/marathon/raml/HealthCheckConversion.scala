@@ -161,7 +161,7 @@ trait HealthCheckConversion {
     case TaskLostProto.RELAUNCH_AFTER_TIMEOUT => TaskLostBehavior.RelaunchAfterTimeout
   }
 
-  implicit val appHealthCheckRamlReader = Reads[AppHealthCheck, CoreHealthCheck] { check =>
+  implicit val appHealthCheckRamlReader: Reads[AppHealthCheck, CoreHealthCheck] = Reads { check =>
     val result: CoreHealthCheck = check match {
       case AppHealthCheck(Some(command), grace, _, interval, failures, None, None, _, proto, timeout, delay) =>
         // we allow, but ignore, a port-index for backwards compatibility
@@ -228,6 +228,42 @@ trait HealthCheckConversion {
         }
     }
     result
+  }
+
+  implicit val healthCommandProtoRamlWriter: Writes[org.apache.mesos.Protos.CommandInfo, CommandCheck] = Writes { command =>
+    if (command.getShell) {
+      CommandCheck(command.getValue)
+    } else {
+      throw new IllegalStateException("app command health checks don't support argv-style commands")
+    }
+  }
+
+  implicit val healthCheckProtoRamlWriter: Writes[Protos.HealthCheckDefinition, AppHealthCheck] = Writes { check =>
+    import Protos.HealthCheckDefinition.Protocol
+    val prototype = AppHealthCheck(
+      gracePeriodSeconds = if (check.hasGracePeriodSeconds) check.getGracePeriodSeconds else AppHealthCheck.DefaultGracePeriodSeconds,
+      intervalSeconds = if (check.hasIntervalSeconds) check.getIntervalSeconds else AppHealthCheck.DefaultIntervalSeconds,
+      maxConsecutiveFailures = if (check.hasMaxConsecutiveFailures) check.getMaxConsecutiveFailures else AppHealthCheck.DefaultMaxConsecutiveFailures,
+      timeoutSeconds = if (check.hasTimeoutSeconds) check.getTimeoutSeconds else AppHealthCheck.DefaultTimeoutSeconds,
+      delaySeconds = if (check.hasDelaySeconds) check.getDelaySeconds else AppHealthCheck.DefaultDelaySeconds,
+      path = if (check.hasPath) Option(check.getPath) else AppHealthCheck.DefaultPath,
+      port = if (check.hasPort) Option(check.getPort) else AppHealthCheck.DefaultPort,
+      portIndex = if (check.hasPortIndex) Option(check.getPortIndex) else AppHealthCheck.DefaultPortIndex,
+      ignoreHttp1xx = if (check.hasIgnoreHttp1Xx) Option(check.getIgnoreHttp1Xx) else AppHealthCheck.DefaultIgnoreHttp1xx
+    )
+    check.getProtocol match {
+      case Protocol.COMMAND => prototype.copy(
+        protocol = AppHealthCheckProtocol.Command,
+        command = if (check.hasCommand) Option(check.getCommand.toRaml) else AppHealthCheck.DefaultCommand
+      )
+      case Protocol.TCP => prototype.copy(protocol = AppHealthCheckProtocol.Tcp)
+      case Protocol.HTTP => prototype.copy(protocol = AppHealthCheckProtocol.Http)
+      case Protocol.HTTPS => prototype.copy(protocol = AppHealthCheckProtocol.Https)
+      case Protocol.MESOS_HTTP => prototype.copy(protocol = AppHealthCheckProtocol.MesosHttp)
+      case Protocol.MESOS_HTTPS => prototype.copy(protocol = AppHealthCheckProtocol.MesosHttps)
+      case Protocol.MESOS_TCP => prototype.copy(protocol = AppHealthCheckProtocol.MesosTcp)
+      case badProtocol => throw new IllegalStateException(s"unsupported health check protocol $badProtocol")
+    }
   }
 }
 

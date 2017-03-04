@@ -7,7 +7,7 @@ import mesosphere.marathon.raml.{ Endpoint, Networks }
 import mesosphere.marathon.state.Container.PortMapping
 import mesosphere.marathon.state._
 import mesosphere.marathon.stream.Implicits._
-import mesosphere.mesos.protos.LabelHelpers._
+import mesosphere.mesos.protos.Implicits._
 import org.apache.mesos
 
 object ContainerSerializer {
