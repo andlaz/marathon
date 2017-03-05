@@ -23,7 +23,7 @@ case class BridgeNetwork(labels: Map[String, String] = Network.DefaultLabels) ex
 
 object Network {
 
-  implicit class NetworkHelper(networks: Seq[Network]) extends AnyRef {
+  implicit class NetworkHelper(val networks: Seq[Network]) extends AnyVal {
     def hasNonHostNetworking = networks.exists(_ != HostNetwork)
     def hasBridgeNetworking = networks.exists {
       case _: BridgeNetwork => true
