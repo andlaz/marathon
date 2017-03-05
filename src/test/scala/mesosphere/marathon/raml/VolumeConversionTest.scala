@@ -2,15 +2,25 @@ package mesosphere.marathon
 package raml
 
 import mesosphere.UnitTest
+import mesosphere.marathon.api.serialization.VolumeSerializer
 import mesosphere.marathon.state.{ DiskType, DockerVolume, ExternalVolumeInfo, PersistentVolumeInfo }
 import org.apache.mesos.{ Protos => Mesos }
 
 class VolumeConversionTest extends UnitTest {
 
+  def convertToProtobufThenToRAML(volume: => state.Volume, raml: => AppVolume): Unit = {
+    "convert to protobuf, then to RAML" in {
+      val proto = VolumeSerializer.toProto(volume)
+      val proto2Raml = proto.toRaml
+      proto2Raml should be(raml)
+    }
+  }
+
   "core DockerVolume conversion" when {
     val volume = state.DockerVolume("/container", "/host", Mesos.Volume.Mode.RW)
     "converting to RAML" should {
       val raml = volume.toRaml[AppVolume]
+      behave like convertToProtobufThenToRAML(volume, raml)
       "convert all fields to RAML" in {
         raml.containerPath should be(volume.containerPath)
         raml.hostPath should be(Some(volume.hostPath))
@@ -41,6 +51,7 @@ class VolumeConversionTest extends UnitTest {
     val volume = state.ExternalVolume("/container", external, Mesos.Volume.Mode.RW)
     "converting to RAML" should {
       val raml = volume.toRaml[AppVolume]
+      behave like convertToProtobufThenToRAML(volume, raml)
       "convert all fields to RAML" in {
         raml.containerPath should be(volume.containerPath)
         raml.hostPath should be(empty)
@@ -78,6 +89,7 @@ class VolumeConversionTest extends UnitTest {
     val volume = state.PersistentVolume("/container", persistent, Mesos.Volume.Mode.RW)
     "converting to RAML" should {
       val raml = volume.toRaml[AppVolume]
+      behave like convertToProtobufThenToRAML(volume, raml)
       "convert all fields to RAML" in {
         raml.containerPath should be(volume.containerPath)
         raml.hostPath should be(empty)

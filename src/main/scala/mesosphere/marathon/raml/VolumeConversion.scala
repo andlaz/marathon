@@ -130,7 +130,7 @@ trait VolumeConversion extends ConstraintConversion with DefaultConversions {
     PersistentVolume(
       `type` = vol.when(_.hasType, _.getType.toRaml).orElse(PersistentVolume.DefaultType),
       size = vol.getSize,
-      maxSize = vol.when(_.hasMaxSize, _.getMaxSize).orElse(PersistentVolume.DefaultMaxSize),
+      maxSize = vol.when(_.hasMaxSize, _.getMaxSize).orElse(PersistentVolume.DefaultMaxSize), // TODO(jdef) protobuf serialization is broken for this
       constraints = vol.whenOrElse(_.getConstraintsCount > 0, _.getConstraintsList.map(_.toRaml[Seq[String]])(collection.breakOut), PersistentVolume.DefaultConstraints)
     )
   }

@@ -2,14 +2,26 @@ package mesosphere.marathon
 package raml
 
 import mesosphere.UnitTest
+import mesosphere.marathon.api.serialization.ContainerSerializer
 
 class ContainerConversionTest extends UnitTest {
 
+  def convertToProtobufThenToRAML(container: => state.Container, raml: => Container): Unit = {
+    "convert to protobuf, then to RAML" in {
+      val proto = ContainerSerializer.toProto(container)
+      val proto2Raml = proto.toRaml
+      proto2Raml should be(raml)
+    }
+  }
+
   "A Mesos Plain container is converted" when {
     "a mesos container" should {
+      val container = state.Container.Mesos(Seq.empty)
+      val raml = container.toRaml[Container]
+
+      behave like convertToProtobufThenToRAML(container, raml)
+
       "convert to a RAML container" in {
-        val container = state.Container.Mesos(Seq.empty)
-        val raml = container.toRaml[Container]
         raml.`type` should be(EngineType.Mesos)
         raml.appc should be(empty)
         raml.docker should be(empty)
@@ -30,9 +42,12 @@ class ContainerConversionTest extends UnitTest {
 
   "A Mesos Docker container is converted" when {
     "a mesos-docker container" should {
+      val container = state.Container.MesosDocker(Nil, "test", Nil, Some(credentials))
+      val raml = container.toRaml[Container]
+
+      behave like convertToProtobufThenToRAML(container, raml)
+
       "convert to a RAML container" in {
-        val container = state.Container.MesosDocker(Nil, "test", Nil, Some(credentials))
-        val raml = container.toRaml[Container]
         raml.`type` should be(EngineType.Mesos)
         raml.appc should be(empty)
         raml.volumes should be(empty)
@@ -61,9 +76,12 @@ class ContainerConversionTest extends UnitTest {
 
   "A Mesos AppC container is created correctly" when {
     "a mesos-appc container" should {
+      val container = state.Container.MesosAppC(Nil, "test", Nil, Some("id"))
+      val raml = container.toRaml[Container]
+
+      behave like convertToProtobufThenToRAML(container, raml)
+
       "convert to a RAML container" in {
-        val container = state.Container.MesosAppC(Nil, "test", Nil, Some("id"))
-        val raml = container.toRaml[Container]
         raml.`type` should be(EngineType.Mesos)
         raml.volumes should be(empty)
         raml.docker should be(empty)
@@ -91,10 +109,13 @@ class ContainerConversionTest extends UnitTest {
 
   "A Docker Docker container is created correctly" when {
     "a docker-docker container" should {
+      val portMapping = state.Container.PortMapping(23, Some(123), 0)
+      val container = state.Container.Docker(Nil, "test", Seq(portMapping))
+      val raml = container.toRaml[Container]
+
+      behave like convertToProtobufThenToRAML(container, raml)
+
       "convert to a RAML container" in {
-        val portMapping = state.Container.PortMapping(23, Some(123), 0)
-        val container = state.Container.Docker(Nil, "test", Seq(portMapping))
-        val raml = container.toRaml[Container]
         raml.`type` should be(EngineType.Docker)
         raml.appc should be(empty)
         raml.volumes should be(empty)
@@ -126,15 +147,15 @@ class ContainerConversionTest extends UnitTest {
     }
   }
 
-  private val credentials = state.Container.Credential("principal", Some("secret"))
-  private val ramlPortMapping = ContainerPortMapping(
+  private lazy val credentials = state.Container.Credential("principal", Some("secret"))
+  private lazy val ramlPortMapping = ContainerPortMapping(
     containerPort = 80,
     hostPort = Some(90),
     servicePort = 100,
     name = Some("pok"),
     labels = Map("wer" -> "rty")
   )
-  private val corePortMapping = state.Container.PortMapping(
+  private lazy val corePortMapping = state.Container.PortMapping(
     containerPort = 80,
     hostPort = Some(90),
     servicePort = 100,
