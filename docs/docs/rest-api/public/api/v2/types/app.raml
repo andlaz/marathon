@@ -312,7 +312,9 @@ types:
         type: datetime
         description: The version of this definition
       versionInfo?: versionInfo.VersionInfo
-      killSelection?: killSelection.KillSelection
+      killSelection?:
+        type: killSelection.KillSelection
+        default: YOUNGEST_FIRST
       unreachableStrategy?: unreachableStrategy.UnreachableStrategy
   AppList:
     type: object

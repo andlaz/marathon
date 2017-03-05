@@ -12,15 +12,15 @@ import org.apache.mesos.{ Protos => Mesos }
 import play.api.libs.json.Json
 
 class AppConversionTest extends UnitTest with ValidationClue {
-  "AppConversion" should {
-    "An app is written to json and can be read again via formats" in {
-      Given("An app")
+  class Fixture {
+    val app = {
       val constraint = Protos.Constraint.newBuilder()
         .setField("foo")
         .setOperator(Protos.Constraint.Operator.CLUSTER)
         .setValue("1")
         .build()
-      val app = AppDefinition(
+
+      AppDefinition(
         id = PathId("/test"),
         cmd = Some("test"),
         user = Some("user"),
@@ -43,9 +43,15 @@ class AppConversionTest extends UnitTest with ValidationClue {
         readinessChecks = Seq(core.readiness.ReadinessCheck()),
         acceptedResourceRoles = Set("*")
       )
+    }
+  }
+  "AppConversion" should {
+    "An app is written to json and can be read again via formats" in new Fixture {
+      Given("An app")
+      val ramlApp = app.toRaml[App]
 
       When("The app is translated to json and read back from formats")
-      val json = Json.toJson(app.toRaml[App])
+      val json = Json.toJson(ramlApp)
       withValidationClue {
         val readApp: AppDefinition = Raml.fromRaml(
           AppNormalization(
@@ -62,6 +68,16 @@ class AppConversionTest extends UnitTest with ValidationClue {
         Then("The app is identical")
         readApp should be(app)
       }
+    }
+    "An app is written as protobuf then converted to RAML matches directly converting the app to RAML" in new Fixture {
+      Given("A RAML app")
+      val ramlApp = app.toRaml[App]
+
+      When("The app is translated to proto, then to RAML")
+      val protoRamlApp = app.toProto.toRaml[App]
+
+      Then("The direct and indirect RAML conversions are identical")
+      protoRamlApp should be(ramlApp)
     }
   }
 }

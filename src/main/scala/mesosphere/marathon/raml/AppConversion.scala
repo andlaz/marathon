@@ -72,7 +72,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
       version = Some(app.versionInfo.version.toOffsetDateTime),
       versionInfo = app.versionInfo.toRaml,
       unreachableStrategy = Some(app.unreachableStrategy.toRaml),
-      killSelection = Some(app.killSelection.toRaml)
+      killSelection = app.killSelection.toRaml
     )
   }
 
@@ -173,7 +173,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
       residency = selectedStrategy.residency,
       secrets = Raml.fromRaml(app.secrets),
       unreachableStrategy = app.unreachableStrategy.map(_.fromRaml).getOrElse(AppDefinition.DefaultUnreachableStrategy),
-      killSelection = app.killSelection.getOrElse(KillSelection.DefaultValue).fromRaml
+      killSelection = app.killSelection.fromRaml
     )
     result
   }
@@ -221,7 +221,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
       secrets = update.secrets.getOrElse(app.secrets),
       taskKillGracePeriodSeconds = update.taskKillGracePeriodSeconds.orElse(app.taskKillGracePeriodSeconds),
       unreachableStrategy = update.unreachableStrategy.orElse(app.unreachableStrategy),
-      killSelection = update.killSelection.orElse(app.killSelection)
+      killSelection = update.killSelection.getOrElse(app.killSelection)
     )
   }
 
@@ -315,19 +315,20 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
         secretRef.getName -> EnvVarSecretRef(secretRef.getSecretRef.getSecretId)
       }
 
-    val versionInfo =
+    val version = service.when(_.hasVersion, s => Timestamp(s.getVersion).toOffsetDateTime).orElse(App.DefaultVersion)
+    val versionInfo: Option[VersionInfo] =
       if (service.hasLastScalingAt) Option(VersionInfo(
         lastConfigChangeAt = Timestamp(service.getLastConfigChangeAt).toOffsetDateTime,
         lastScalingAt = Timestamp(service.getLastScalingAt).toOffsetDateTime
       ))
-      else App.DefaultVersionInfo
+      else None
 
     App(
       id = service.getId,
       acceptedResourceRoles = if (service.hasAcceptedResourceRoles && service.getAcceptedResourceRoles.getRoleCount > 0) Option(service.getAcceptedResourceRoles.getRoleList.to[Set]) else App.DefaultAcceptedResourceRoles,
       args = if (service.hasCmd && service.getCmd.getArgumentsCount > 0) service.getCmd.getArgumentsList.to[Seq] else App.DefaultArgs,
       backoffFactor = service.whenOrElse(_.hasBackoffFactor, _.getBackoffFactor, App.DefaultBackoffFactor),
-      backoffSeconds = service.whenOrElse(_.hasBackoff, _.getBackoff.toInt, App.DefaultBackoffSeconds),
+      backoffSeconds = service.whenOrElse(_.hasBackoff, b => (b.getBackoff / 1000L).toInt, App.DefaultBackoffSeconds),
       cmd = if (service.hasCmd && service.getCmd.hasValue) Option(service.getCmd.getValue) else App.DefaultCmd,
       constraints = service.whenOrElse(_.getConstraintsCount > 0, _.getConstraintsList.map(_.toRaml[Seq[String]])(collection.breakOut), App.DefaultConstraints),
       container = service.when(_.hasContainer, _.getContainer.toRaml).orElse(App.DefaultContainer),
@@ -340,7 +341,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
       healthChecks = service.whenOrElse(_.getHealthChecksCount > 0, _.getHealthChecksList.toRaml.to[Set], App.DefaultHealthChecks),
       instances = service.whenOrElse(_.hasInstances, _.getInstances, App.DefaultInstances),
       labels = service.getLabelsList.map { label => label.getKey -> label.getValue }(collection.breakOut),
-      maxLaunchDelaySeconds = service.whenOrElse(_.hasMaxLaunchDelay, _.getMaxLaunchDelay.toInt, App.DefaultMaxLaunchDelaySeconds),
+      maxLaunchDelaySeconds = service.whenOrElse(_.hasMaxLaunchDelay, m => (m.getMaxLaunchDelay / 1000L).toInt, App.DefaultMaxLaunchDelaySeconds),
       mem = resourcesMap.getOrElse(Resource.MEM, App.DefaultMem),
       gpus = resourcesMap.get(Resource.GPUS).fold(App.DefaultGpus)(_.toInt),
       ipAddress = service.when(_.hasOBSOLETEIpAddress, _.getOBSOLETEIpAddress.toRaml).orElse(App.DefaultIpAddress),
@@ -356,7 +357,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Heal
       upgradeStrategy = service.when(_.hasUpgradeStrategy, _.getUpgradeStrategy.toRaml).orElse(App.DefaultUpgradeStrategy),
       uris = None, // not stored in protobuf
       user = if (service.hasCmd && service.getCmd.hasUser) Option(service.getCmd.getUser) else App.DefaultUser,
-      version = service.when(_.hasVersion, s => Timestamp(s.getVersion).toOffsetDateTime).orElse(App.DefaultVersion),
+      version = version,
       versionInfo = versionInfo, // we restore this but App-to-AppDefinition conversion drops it...
       killSelection = App.DefaultKillSelection, // TODO(jdef) WTF this isn't stored in proto?
       unreachableStrategy = service.when(_.hasUnreachableStrategy, _.getUnreachableStrategy.toRaml).orElse(App.DefaultUnreachableStrategy)

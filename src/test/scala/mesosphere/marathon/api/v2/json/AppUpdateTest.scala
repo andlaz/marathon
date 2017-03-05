@@ -579,7 +579,7 @@ class AppUpdateTest extends UnitTest {
       val appDef = AppDefinition(id = runSpecId, killSelection = KillSelection.YoungestFirst)
       val update = AppUpdate(killSelection = Some(raml.KillSelection.OldestFirst))
       val result = Raml.fromRaml(update -> appDef)
-      result.killSelection should contain(raml.KillSelection.OldestFirst)
+      result.killSelection should be(raml.KillSelection.OldestFirst)
     }
   }
 }
